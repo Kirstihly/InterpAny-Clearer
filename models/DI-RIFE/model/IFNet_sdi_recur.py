@@ -77,6 +77,7 @@ class IFNet_sdi(nn.Module):
         mask_list = []
         warped_img0 = img0
         warped_img1 = img1
+        _, _, a, b = warped_img0.shape
         flow = None
         loss_distill = 0
         stu = [self.block0, self.block1, self.block2]
@@ -84,14 +85,18 @@ class IFNet_sdi(nn.Module):
             if flow != None:
                 flow_d, mask_d = stu[i](torch.cat((img0, img1, sdi_map, warped_img0, warped_img1, mask), 1), flow,
                                         scale=scale[i])
+                flow_d = flow_d[:, :, :a, :b]
+                mask_d = mask_d[:, :, :a, :b]
                 flow = flow + flow_d
                 mask = mask + mask_d
             else:
                 flow, mask = stu[i](torch.cat((img0, img1, sdi_map), 1), None, scale=scale[i])
+                flow = flow[:, :, :a, :b]
+                mask = mask[:, :, :a, :b]
             mask_list.append(torch.sigmoid(mask))
             flow_list.append(flow)
-            warped_img0 = warp(img0, flow[:, :2])
-            warped_img1 = warp(img1, flow[:, 2:4])
+            warped_img0 = warp(img0, flow[:, :2])[:, :, :a, :b]
+            warped_img1 = warp(img1, flow[:, 2:4])[:, :, :a, :b]
             merged_student = (warped_img0, warped_img1)
             merged.append(merged_student)
 

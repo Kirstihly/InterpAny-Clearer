@@ -82,13 +82,20 @@ class Unet(nn.Module):
         self.conv = nn.Conv2d(c, 3, 3, 1, 1)
 
     def forward(self, img0, img1, warped_img0, warped_img1, mask, flow, c0, c1):
-        s0 = self.down0(torch.cat((img0, img1, warped_img0, warped_img1, mask, flow), 1))
-        s1 = self.down1(torch.cat((s0, c0[0], c1[0]), 1))
-        s2 = self.down2(torch.cat((s1, c0[1], c1[1]), 1))
-        s3 = self.down3(torch.cat((s2, c0[2], c1[2]), 1))
+        _, _, c0a, c0b = c0[0].shape
+        _, _, c1a, c1b = c0[1].shape
+        _, _, c2a, c2b = c0[2].shape
+        _, _, c3a, c3b = c0[3].shape
+        s0 = self.down0(torch.cat((img0, img1, warped_img0, warped_img1, mask, flow), 1))[:, :, :c0a, :c0b]
+        s1 = self.down1(torch.cat((s0, c0[0], c1[0]), 1))[:, :, :c1a, :c1b]
+        s2 = self.down2(torch.cat((s1, c0[1], c1[1]), 1))[:, :, :c2a, :c2b]
+        s3 = self.down3(torch.cat((s2, c0[2], c1[2]), 1))[:, :, :c3a, :c3b]
         x = self.up0(torch.cat((s3, c0[3], c1[3]), 1))
+        p1d = (0, 1)
+        x = F.pad(x, p1d, "constant", 0)  # effectively zero padding
         x = self.up1(torch.cat((x, s2), 1))
         x = self.up2(torch.cat((x, s1), 1))
+        x = F.pad(x, p1d, "constant", 0)  # effectively zero padding
         x = self.up3(torch.cat((x, s0), 1))
         x = self.conv(x)
         return torch.sigmoid(x)
