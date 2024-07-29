@@ -16,6 +16,7 @@ import imageio as iio
 import os.path as osp
 import numpy as np
 import numpy.ma as ma
+import torch.nn.functional as F
 from model.RIFE_sdi_recur import Model
 from argparse import ArgumentParser
 from tqdm import tqdm
@@ -23,11 +24,28 @@ from model.pytorch_msssim import ssim_matlab
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+class InputPadder:
+    """ Pads images such that dimensions are divisible by divisor """
+    def __init__(self, dims, divisor = 16):
+        self.ht, self.wd = dims[-2:]
+        pad_ht = (((self.ht // divisor) + 1) * divisor - self.ht) % divisor
+        pad_wd = (((self.wd // divisor) + 1) * divisor - self.wd) % divisor
+        self._pad = [pad_wd//2, pad_wd - pad_wd//2, pad_ht//2, pad_ht - pad_ht//2]
+
+    def pad(self, *inputs):
+        return [F.pad(x, self._pad, mode='replicate') for x in inputs]
+
+    def unpad(self,x):
+        ht, wd = x.shape[-2:]
+        c = [self._pad[2], ht-self._pad[3], self._pad[0], wd-self._pad[1]]
+        return x[..., c[0]:c[1], c[2]:c[3]]
 
 def interpolate(I0, I1, num, iters, use_flip=False):
     imgs = []
     I0 = (torch.tensor(I0.transpose(2, 0, 1)).to(device) / 255.).unsqueeze(0)
     I1 = (torch.tensor(I1.transpose(2, 0, 1)).to(device) / 255.).unsqueeze(0)
+    padder = InputPadder(I0.shape, 32)
+    I0, I1 = padder.pad(I0, I1)
 
     sdi_maps = [torch.zeros_like(I0[:, :1, :, :]) + j / (num + 1) for j in range(1, num + 1)]
 
@@ -36,6 +54,7 @@ def interpolate(I0, I1, num, iters, use_flip=False):
             mid = model.inference(I1, I0, sdi_map=1. - sdi_map, iters=iters)[0]
         else:
             mid = model.inference(I0, I1, sdi_map=sdi_map, iters=iters)[0]
+        mid = padder.unpad(mid)
         mid = mid.clamp(0, 1).permute(1, 2, 0).detach().cpu().numpy()
         mid = (mid * 255.).astype(np.uint8)
         imgs.append(mid)
